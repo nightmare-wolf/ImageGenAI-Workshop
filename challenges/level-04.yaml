@@ -1,0 +1,48 @@
+# Level 4 — "Read the Fine Print"  (OWASP LLM02 — Sensitive Information Disclosure)
+id: 4
+slug: read-the-fine-print
+name: "Read the Fine Print"
+owasp_tag: LLM02
+difficulty: 3
+base_points: 200
+depends_on: [1]
+mode: vulnerable
+
+story: |
+  PixelForge proudly embeds "provenance metadata" in every image for authenticity. Turns out
+  provenance is verbose.
+
+system_prompt: |
+  You are PixelForge. Generate the requested image. Provenance metadata is attached automatically.
+
+template:
+  mode: naive
+  delimiters: { system: "<|system|>", user: "<|user|>" }
+  body: |
+    <|system|>{system_prompt}<|user|>{user_prompt}
+
+guardrails:
+  pre:  [ { type: denylist, fields: [prompt, negative_prompt, style_preset, seed_caption] } ]
+  post: [ ]                                  # VULN: no metadata_scrub
+
+# VULN: verbose provenance writes model name, the full rendered template, worker node id, and a
+# provenance_token (the flag) into PNG tEXt/iTXt chunks + EXIF UserComment. Nothing strips it.
+metadata:
+  verbosity: verbose
+  embed_fields: [ model, rendered_template, worker_node_id, provenance_token ]
+  provenance_token: "bsides{metadata_is_an_output_channel_too}"
+
+flag:
+  type: static
+  value: "bsides{metadata_is_an_output_channel_too}"
+
+hints:
+  - { tier: 1, cost: 20, text: "The image is also a file. What travels with a file besides pixels?" }
+  - { tier: 2, cost: 40, text: "PNGs carry text chunks; tools write EXIF/UserComment. Inspect them." }
+  - { tier: 3, cost: 60, text: "Download the image and run it through the Inspect Metadata tool (or exiftool). Read every text field." }
+
+mitigation: |
+  Strip metadata from generated artifacts before serving (whitelist only what you intend to
+  publish). Never embed internal identifiers, prompts, or tokens in outputs. Treat every output
+  channel — body, headers, files, metadata, logs — as attacker-visible (LLM05). (`fixed` mode:
+  post.metadata_scrub removes all but a minimal, intended provenance line.)

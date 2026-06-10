@@ -1,0 +1,85 @@
+# Local dev / single-node workshop stack. Image generation defaults to `mock` (no GPU needed).
+# For the real GPU path set IMAGEGEN_MODE=runpod + RunPod creds in .env (GPU runs on RunPod, not here).
+name: imagegenai-workshop
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ctf
+      POSTGRES_PASSWORD: ctf
+      POSTGRES_DB: ctf
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ctf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: { context: ../backend }
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://ctf:ctf@postgres:5432/ctf
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../challenges:/app/challenges:ro          # hot-load challenge configs
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.scripts.seed_db &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build: { context: ../frontend }
+    environment:
+      VITE_API_BASE: /api
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [backend, frontend]
+
+  # ── Observability (optional locally; required for the instructor dashboard) ──
+  prometheus:
+    image: prom/prometheus:latest
+    volumes: [ "./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro" ]
+    profiles: ["observability"]
+
+  loki:
+    image: grafana/loki:latest
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes: [ "./observability/loki-config.yml:/etc/loki/loki-config.yml:ro" ]
+    profiles: ["observability"]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes: [ "./observability/grafana:/etc/grafana/provisioning:ro" ]
+    depends_on: [prometheus, loki]
+    profiles: ["observability"]
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:

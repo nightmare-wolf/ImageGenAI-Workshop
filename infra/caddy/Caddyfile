@@ -1,0 +1,27 @@
+# Single-domain reverse proxy with automatic HTTPS. Set your workshop domain below.
+# Locally, use `localhost` (Caddy issues a local cert) or the :80 block.
+
+{$WORKSHOP_DOMAIN:localhost} {
+	encode gzip
+
+	# API + websockets → backend
+	@api path /api/* /ws/* /healthz
+	handle @api {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else → SPA
+	handle {
+		reverse_proxy frontend:5173
+	}
+
+	# Basic protections (defense-in-depth; real rate limiting is in the backend)
+	request_body {
+		max_size 8MB
+	}
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+}

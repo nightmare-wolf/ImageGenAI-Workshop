@@ -1,0 +1,42 @@
+# Level 0 — "Smoke Test"  (free warm-up: confirms login + network + submit flow)
+id: 0
+slug: smoke-test
+name: "Smoke Test"
+owasp_tag: LLM01            # nominal; this level teaches the flow, not a vuln
+difficulty: 1
+base_points: 10
+depends_on: []
+mode: vulnerable
+
+story: |
+  Welcome to PixelForge. Generate any image to confirm everything works, then submit the flag
+  shown in the app footer. This one's free — it just proves your login, network, and flag
+  submission all work before the real challenges begin.
+
+system_prompt: |
+  You are PixelForge, a friendly image-generation assistant. Generate the requested image.
+
+template:
+  mode: naive
+  delimiters: { system: "<|system|>", user: "<|user|>" }
+  body: |
+    <|system|>{system_prompt}<|user|>{user_prompt}
+
+guardrails:
+  pre:  [ { type: denylist, fields: [prompt, negative_prompt, style_preset, seed_caption] } ]
+  post: [ { type: output_scan, fields: [assistant_message] } ]
+
+metadata:
+  verbosity: minimal
+
+flag:
+  type: static
+  value: "bsides{welcome_to_pixelforge}"
+
+hints:
+  - { tier: 1, cost: 0, text: "The flag is printed in the page footer. Copy it and submit it." }
+  - { tier: 2, cost: 0, text: "Generate any image first, then paste bsides{welcome_to_pixelforge}." }
+  - { tier: 3, cost: 0, text: "Flag: bsides{welcome_to_pixelforge}" }
+
+mitigation: |
+  N/A — onboarding level. Establishes the recon→submit loop and confirms infrastructure.
