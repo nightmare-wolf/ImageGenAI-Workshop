@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ctf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ctf}
+      POSTGRES_DB: ${POSTGRES_DB:-ctf}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ctf} -d ${POSTGRES_DB:-ctf}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [ctfnet]
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ctf}:${POSTGRES_PASSWORD:-ctf}@db:5432/${POSTGRES_DB:-ctf}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-change-me-min-32-bytes-long!!}   # admin JWT signing
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-240}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme-admin}                       # /admin/login
+      EVENT_ACCESS_CODE: ${EVENT_ACCESS_CODE:-}                               # blank = open team registration
+      LLM_MODE: ${LLM_MODE:-mock}                       # mock | openai
+      LLM_API_BASE: ${LLM_API_BASE:-}                   # e.g. https://<runpod-vllm>/v1
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-meta-llama/Meta-Llama-3.1-8B-Instruct}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - ./challenges:/app/challenges:ro      # config-driven challenge engine reads these
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks: [ctfnet]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: /api
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    networks: [ctfnet]
+
+volumes:
+  pgdata:
+
+networks:
+  ctfnet:
+    driver: bridge
